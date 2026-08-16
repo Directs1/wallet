@@ -222,7 +222,7 @@ const ITEMS = [
 ];
 
 const CARD_RATIO = 0.628;
-const PEEK = 118;
+const PEEK = 148;
 const SPRING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const SPRING_BOUNCE = "cubic-bezier(0.34, 1.3, 0.5, 1)";
 
@@ -263,7 +263,7 @@ function AppleWallet() {
   /* bottom-stack slot for a non-selected item while something is open */
   const bottomOrder = ITEMS.filter((it) => it.id !== selected);
   const bottomSlot = (id) => bottomOrder.findIndex((it) => it.id === id);
-  const bottomY = (slot) => vh - 108 + slot * 12;
+  const bottomY = (slot) => vh - 122 + slot * 18;
 
   const open = (id) => {
     if (phase === "home") {
@@ -332,8 +332,8 @@ function AppleWallet() {
         h("button", {
           style: {
             background: "#0a84ff", border: "none", color: "#fff",
-            fontSize: 19, fontWeight: 500, padding: "13px 34px",
-            borderRadius: 30, cursor: "pointer",
+            fontSize: 16, fontWeight: 500, padding: "10px 24px",
+            borderRadius: 24, cursor: "pointer",
           }
         }, "Pay with Passcode")
       ),
