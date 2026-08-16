@@ -236,7 +236,10 @@ function AppleWallet() {
   const [phase, setPhase] = useState("stack");
   const [vw, setVw] = useState(390);
   const [standalone, setStandalone] = useState(true);
+  const [dragY, setDragY] = useState(0);
   const containerRef = useRef(null);
+  const touchStart = useRef(null);
+  const dragging = useRef(false);
 
   useEffect(() => {
     const measure = () => {
@@ -256,13 +259,39 @@ function AppleWallet() {
 
   const open = (id) => {
     if (phase !== "stack") return;
+    if (dragY !== 0) return; // ignore click that ends a drag
     setSelected(id);
     setPhase("opening");
     requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
   };
   const close = () => {
+    setDragY(0);
     setPhase("closing");
     setTimeout(() => { setSelected(null); setPhase("stack"); }, 480);
+  };
+
+  /* swipe-down-to-dismiss on the opened pass */
+  const onTouchStart = (e) => {
+    if (phase !== "open") return;
+    touchStart.current = e.touches ? e.touches[0].clientY : e.clientY;
+    dragging.current = true;
+  };
+  const onTouchMove = (e) => {
+    if (!dragging.current || touchStart.current === null) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const dy = y - touchStart.current;
+    if (dy > 0) setDragY(dy); // only drag downward
+    else setDragY(dy * 0.15); // slight resistance upward
+  };
+  const onTouchEnd = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    touchStart.current = null;
+    if (dragY > 110) {
+      close();
+    } else {
+      setDragY(0); // spring back
+    }
   };
 
   const selIndex = ITEMS.findIndex((it) => it.id === selected);
@@ -280,41 +309,18 @@ function AppleWallet() {
   },
     h("div", { ref: containerRef, style: { width: "100%", maxWidth: 430, position: "relative", padding: "0 16px" } },
 
-      /* header */
-      h("div", {
-        style: {
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "max(54px, env(safe-area-inset-top, 54px)) 4px 18px",
-          opacity: isOpenState ? 0 : 1,
-          transform: isOpenState ? "translateY(-16px)" : "translateY(0)",
-          transition: `opacity 0.3s ease, transform 0.4s ${SPRING}`,
-          pointerEvents: isOpenState ? "none" : "auto",
-        }
-      },
-        h("div", { style: { color: "#fff", fontSize: 32, fontWeight: 700, letterSpacing: -0.5 } }, "Wallet"),
-        h("div", {
-          style: {
-            width: 32, height: 32, borderRadius: 16, background: "rgba(255,255,255,0.15)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: 20, fontWeight: 300, cursor: "pointer",
-          }
-        }, "+")
-      ),
+      /* top safe-area spacer (real Wallet home has no title bar) */
+      h("div", { style: { height: "max(54px, env(safe-area-inset-top, 54px))" } }),
 
-      /* Done nav */
+      /* "..." button only, like real Wallet's opened pass */
       isOpenState && h("div", {
         style: {
           position: "absolute", top: "max(50px, env(safe-area-inset-top, 50px))",
-          left: 20, right: 20, zIndex: 60,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          opacity: phase === "open" ? 1 : 0,
+          right: 20, zIndex: 60,
+          opacity: phase === "open" && dragY === 0 ? 1 : 0,
           transition: "opacity 0.2s ease",
         }
       },
-        h("button", {
-          onClick: close,
-          style: { background: "none", border: "none", color: "#0a84ff", fontSize: 17, cursor: "pointer", padding: "6px 2px" }
-        }, "Done"),
         h("button", {
           style: {
             background: "rgba(255,255,255,0.16)", border: "none", color: "#fff",
@@ -334,7 +340,8 @@ function AppleWallet() {
 
           if (isOpenState && phase !== "closing") {
             if (isSel) {
-              y = 46;
+              y = 46 + dragY;
+              scale = Math.max(0.9, 1 - dragY / 1400);
               ht = isTicket ? Math.min(640, window.innerHeight - 140) : cardH + 10;
             } else {
               const dir = i < selIndex ? -1 : 1;
@@ -355,6 +362,13 @@ function AppleWallet() {
           return h("div", {
             key: item.id,
             onClick: () => open(item.id),
+            onTouchStart: isSel ? onTouchStart : undefined,
+            onTouchMove: isSel ? onTouchMove : undefined,
+            onTouchEnd: isSel ? onTouchEnd : undefined,
+            onMouseDown: isSel ? onTouchStart : undefined,
+            onMouseMove: isSel ? onTouchMove : undefined,
+            onMouseUp: isSel ? onTouchEnd : undefined,
+            onMouseLeave: isSel ? onTouchEnd : undefined,
             style: {
               position: "absolute", left: 0, right: 0, top: 0, height: ht,
               transform: `translateY(${y}px) scale(${scale})`,
@@ -362,9 +376,10 @@ function AppleWallet() {
               zIndex: isSel && isOpenState ? 50 : i + 1,
               borderRadius: isTicket ? 12 : 16,
               overflow: "hidden",
-              cursor: phase === "stack" ? "pointer" : "default",
+              cursor: phase === "stack" ? "pointer" : "grab",
+              touchAction: isSel && isOpenState ? "none" : "auto",
               boxShadow: isSel && isOpenState ? "0 18px 60px rgba(0,0,0,0.8)" : "0 -6px 24px rgba(0,0,0,0.55)",
-              transition: [
+              transition: (isSel && dragging.current) ? "none" : [
                 `transform 0.55s ${isSel ? SPRING_BOUNCE : SPRING} ${delay}s`,
                 `height 0.55s ${SPRING} ${delay}s`,
                 `opacity 0.4s ease ${delay}s`,
