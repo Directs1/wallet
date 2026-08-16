@@ -227,9 +227,11 @@ const SPRING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const SPRING_BOUNCE = "cubic-bezier(0.34, 1.3, 0.5, 1)";
 
 function AppleWallet() {
+  /* phases: home | opening | open | dropping | expanding */
   const [selected, setSelected] = useState(null);
-  const [phase, setPhase] = useState("stack");
+  const [phase, setPhase] = useState("home");
   const [vw, setVw] = useState(390);
+  const [vh, setVh] = useState(800);
   const [standalone, setStandalone] = useState(true);
   const [dragY, setDragY] = useState(0);
   const containerRef = useRef(null);
@@ -239,6 +241,7 @@ function AppleWallet() {
   useEffect(() => {
     const measure = () => {
       if (containerRef.current) setVw(containerRef.current.offsetWidth);
+      setVh(window.innerHeight);
       const isStandalone = window.navigator.standalone === true ||
         window.matchMedia("(display-mode: standalone)").matches;
       setStandalone(isStandalone);
@@ -252,20 +255,38 @@ function AppleWallet() {
   const cardH = Math.round(cardW * CARD_RATIO);
   const ticketStackH = cardH + 40;
 
+  const stackY = (i) => i * PEEK;
+  const stackHeight = stackY(ITEMS.length - 1) + ticketStackH + 20;
+  const selIndex = ITEMS.findIndex((it) => it.id === selected);
+  const selItem = selIndex >= 0 ? ITEMS[selIndex] : null;
+
+  /* bottom-stack slot for a non-selected item while something is open */
+  const bottomOrder = ITEMS.filter((it) => it.id !== selected);
+  const bottomSlot = (id) => bottomOrder.findIndex((it) => it.id === id);
+  const bottomY = (slot) => vh - 108 + slot * 12;
+
   const open = (id) => {
-    if (phase !== "stack") return;
-    if (dragY !== 0) return; // ignore click that ends a drag
-    setSelected(id);
-    setPhase("opening");
-    requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
-  };
-  const close = () => {
-    setDragY(0);
-    setPhase("closing");
-    setTimeout(() => { setSelected(null); setPhase("stack"); }, 480);
+    if (phase === "home") {
+      setSelected(id);
+      setPhase("opening");
+      requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
+    } else if (phase === "open" && id !== selected) {
+      /* tap a card in the bottom stack -> swap it to the top */
+      setDragY(0);
+      setSelected(id);
+    }
   };
 
-  /* swipe-down-to-dismiss on the opened pass */
+  const dismiss = () => {
+    /* card drops into the bottom stack, then the stack expands to home */
+    setDragY(0);
+    setPhase("dropping");
+    setTimeout(() => {
+      setPhase("expanding");
+      setTimeout(() => { setSelected(null); setPhase("home"); }, 60);
+    }, 420);
+  };
+
   const onTouchStart = (e) => {
     if (phase !== "open") return;
     touchStart.current = e.touches ? e.touches[0].clientY : e.clientY;
@@ -275,25 +296,19 @@ function AppleWallet() {
     if (!dragging.current || touchStart.current === null) return;
     const y = e.touches ? e.touches[0].clientY : e.clientY;
     const dy = y - touchStart.current;
-    if (dy > 0) setDragY(dy); // only drag downward
-    else setDragY(dy * 0.15); // slight resistance upward
+    if (dy > 0) setDragY(dy);
+    else setDragY(dy * 0.15);
   };
   const onTouchEnd = () => {
     if (!dragging.current) return;
     dragging.current = false;
     touchStart.current = null;
-    if (dragY > 110) {
-      close();
-    } else {
-      setDragY(0); // spring back
-    }
+    if (dragY > 110) dismiss();
+    else setDragY(0);
   };
 
-  const selIndex = ITEMS.findIndex((it) => it.id === selected);
-  const stackY = (i) => i * PEEK;
-  const stackHeight = stackY(ITEMS.length - 1) + ticketStackH + 20;
-  const isOpenState = phase === "opening" || phase === "open" || phase === "closing";
-  const showFull = phase === "open";
+  const isOpenState = phase !== "home";
+  const showFull = phase === "open" || phase === "dropping";
 
   return h("div", {
     style: {
@@ -304,26 +319,35 @@ function AppleWallet() {
   },
     h("div", { ref: containerRef, style: { width: "100%", maxWidth: 430, position: "relative", padding: "0 16px" } },
 
-      /* top safe-area spacer (real Wallet home has no title bar) */
       h("div", { style: { height: "max(54px, env(safe-area-inset-top, 54px))" } }),
 
-      /* "..." button only, like real Wallet's opened pass */
-      isOpenState && h("div", {
+      /* Pay with Passcode - cards only, centered on screen */
+      phase === "open" && selItem && selItem.kind === "card" && dragY === 0 && h("div", {
         style: {
-          position: "absolute", top: "max(50px, env(safe-area-inset-top, 50px))",
-          right: 20, zIndex: 60,
-          opacity: phase === "open" && dragY === 0 ? 1 : 0,
-          transition: "opacity 0.2s ease",
+          position: "fixed", left: 0, right: 0, top: "52%",
+          display: "flex", justifyContent: "center", zIndex: 40,
+          animation: "navFade 0.35s ease",
         }
       },
         h("button", {
           style: {
-            background: "rgba(255,255,255,0.16)", border: "none", color: "#fff",
-            width: 30, height: 30, borderRadius: 15, fontSize: 16, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "#0a84ff", border: "none", color: "#fff",
+            fontSize: 19, fontWeight: 500, padding: "13px 34px",
+            borderRadius: 30, cursor: "pointer",
           }
-        }, "\u22EF")
+        }, "Pay with Passcode")
       ),
+
+      /* glow behind the active card, like Apple Pay's card sheen */
+      phase === "open" && h("div", {
+        style: {
+          position: "absolute", left: 8, right: 8, top: 40,
+          height: cardH + 12, borderRadius: 20,
+          boxShadow: "0 0 44px 6px rgba(120,180,255,0.25)",
+          zIndex: 1, pointerEvents: "none",
+          transition: "opacity 0.3s ease",
+        }
+      }),
 
       /* stack */
       h("div", { style: { position: "relative", height: stackHeight } },
@@ -333,26 +357,39 @@ function AppleWallet() {
           let y = stackY(i), scale = 1, opacity = 1;
           let ht = isTicket ? ticketStackH : cardH;
 
-          if (isOpenState && phase !== "closing") {
+          if (phase === "opening" || phase === "open") {
             if (isSel) {
               y = 46 + dragY;
-              scale = Math.max(0.9, 1 - dragY / 1400);
-              ht = isTicket ? Math.min(640, window.innerHeight - 140) : cardH + 10;
+              scale = Math.max(0.92, 1 - dragY / 1600);
+              ht = isTicket ? Math.min(640, vh - 190) : cardH + 10;
             } else {
-              const dir = i < selIndex ? -1 : 1;
-              y = stackY(i) + dir * (window.innerHeight * 0.85);
-              scale = 0.95; opacity = 0;
+              /* collapsed stack pinned at the bottom of the screen */
+              y = bottomY(bottomSlot(item.id));
+              scale = 0.96;
+              ht = isTicket ? ticketStackH : cardH;
             }
-          }
-          if (phase === "closing") {
-            y = stackY(i); scale = 1; opacity = 1;
+          } else if (phase === "dropping") {
+            if (isSel) {
+              /* active card drops into the front of the bottom stack */
+              y = bottomY(bottomOrder.length);
+              scale = 0.96;
+              ht = isTicket ? ticketStackH : cardH;
+            } else {
+              y = bottomY(bottomSlot(item.id));
+              scale = 0.96;
+            }
+          } else if (phase === "expanding") {
+            y = stackY(i); scale = 1;
             ht = isTicket ? ticketStackH : cardH;
           }
 
-          const dist = Math.abs(i - (selIndex === -1 ? 0 : selIndex));
-          const delay = (phase === "opening" || phase === "open")
-            ? (isSel ? 0 : dist * 0.03)
-            : phase === "closing" ? (isSel ? 0 : 0.04 + dist * 0.03) : 0;
+          const inBottomStack = isOpenState && !isSel;
+          const delay =
+            phase === "opening" || phase === "open"
+              ? (isSel ? 0 : bottomSlot(item.id) * 0.03)
+              : phase === "expanding"
+              ? i * 0.03
+              : 0;
 
           return h("div", {
             key: item.id,
@@ -368,19 +405,23 @@ function AppleWallet() {
               position: "absolute", left: 0, right: 0, top: 0, height: ht,
               transform: `translateY(${y}px) scale(${scale})`,
               opacity,
-              zIndex: isSel && isOpenState ? 50 : i + 1,
+              zIndex: isSel && isOpenState
+                ? (phase === "dropping" ? bottomOrder.length + 10 : 50)
+                : inBottomStack ? bottomSlot(item.id) + 2 : i + 1,
               borderRadius: isTicket ? 12 : 16,
               overflow: "hidden",
-              cursor: phase === "stack" ? "pointer" : "grab",
-              touchAction: isSel && isOpenState ? "none" : "auto",
-              boxShadow: isSel && isOpenState ? "0 18px 60px rgba(0,0,0,0.8)" : "0 -6px 24px rgba(0,0,0,0.55)",
+              cursor: "pointer",
+              boxShadow: isSel && phase === "open"
+                ? "0 18px 60px rgba(0,0,0,0.8)"
+                : "0 -6px 24px rgba(0,0,0,0.55)",
               transition: (isSel && dragging.current) ? "none" : [
-                `transform 0.55s ${isSel ? SPRING_BOUNCE : SPRING} ${delay}s`,
-                `height 0.55s ${SPRING} ${delay}s`,
-                `opacity 0.4s ease ${delay}s`,
-                "box-shadow 0.4s ease",
+                `transform 0.5s ${isSel && phase === "open" ? SPRING_BOUNCE : SPRING} ${delay}s`,
+                `height 0.5s ${SPRING} ${delay}s`,
+                `opacity 0.35s ease ${delay}s`,
+                "box-shadow 0.35s ease",
               ].join(", "),
-              willChange: "transform, height, opacity",
+              touchAction: isSel && isOpenState ? "none" : "auto",
+              willChange: "transform, height",
             }
           },
             isTicket
@@ -390,18 +431,8 @@ function AppleWallet() {
         })
       ),
 
-      /* Pass Details */
-      phase === "open" && ITEMS[selIndex] && ITEMS[selIndex].kind === "ticket" && h("div", {
-        style: {
-          position: "absolute", left: 0, right: 0,
-          top: 46 + Math.min(640, window.innerHeight - 140) + 14,
-          textAlign: "center", color: "#0a84ff", fontSize: 15,
-          animation: "navFade 0.3s ease", zIndex: 55, cursor: "pointer",
-        }
-      }, "Pass Details"),
-
       /* add-to-homescreen hint */
-      !standalone && phase === "stack" && h("div", {
+      !standalone && phase === "home" && h("div", {
         style: {
           position: "fixed", bottom: 0, left: 0, right: 0,
           background: "rgba(28,28,30,0.92)",
