@@ -74,7 +74,8 @@ function VenmoCard() {
     h("div", { style: { position: "absolute", top: 20, left: 24, color: "#fff", fontSize: 34, fontWeight: 800, fontStyle: "italic", letterSpacing: -1 } }, "venmo"),
     h("div", { style: { position: "absolute", top: 28, right: 24, display: "flex", alignItems: "center" } },
       h("span", { style: { color: "#fff", fontSize: 19, fontWeight: 700 } }, "debit"), h(Waves)),
-    h("div", { style: { position: "absolute", bottom: 16, right: 20 } }, h(MCLogo, { size: 62 }))
+    h("div", { style: { position: "absolute", bottom: 16, right: 20 } }, h(MCLogo, { size: 62 })),
+    h("div", { style: { position: "absolute", bottom: 18, left: 24, color: "#fff", fontSize: 18, letterSpacing: 2 } }, "\u2022\u2022\u2022\u2022 9567")
   );
 }
 
@@ -82,7 +83,9 @@ function CashAppCard() {
   return h("div", { style: { position: "absolute", inset: 0, background: "#0b0b0b" } },
     h("div", { style: { position: "absolute", top: 18, left: 24, color: "#fff", fontSize: 40, fontWeight: 700 } }, "$"),
     h("div", { style: { position: "absolute", top: 26, right: 24, color: "#fff", fontSize: 22, fontWeight: 700 } }, "Cash App"),
-    h("div", { style: { position: "absolute", bottom: 18, right: 24, color: "#fff", fontSize: 17, fontWeight: 600, letterSpacing: 1.5 } }, "DEBIT")
+    h("div", { style: { position: "absolute", bottom: 58, right: 24, color: "#fff", fontSize: 16, fontWeight: 500, letterSpacing: 2 } }, "DEBIT"),
+    h("div", { style: { position: "absolute", bottom: 12, right: 22, color: "#fff", fontSize: 34, fontWeight: 800, fontStyle: "italic", fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: -1.5, transform: "skewX(-8deg)" } }, "VISA"),
+    h("div", { style: { position: "absolute", bottom: 18, left: 24, color: "#fff", fontSize: 18, letterSpacing: 2 } }, "\u2022\u2022\u2022\u2022 7443")
   );
 }
 
