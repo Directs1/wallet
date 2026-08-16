@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wallet">
+<meta name="theme-color" content="#000000">
+<title>Wallet</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111'/%3E%3Crect x='30' y='50' width='120' height='24' rx='8' fill='%23009cde'/%3E%3Crect x='30' y='80' width='120' height='24' rx='8' fill='%23c8102e'/%3E%3Crect x='30' y='110' width='120' height='24' rx='8' fill='%23b3a06b'/%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overscroll-behavior: none; height: 100%; }
+  #root { height: 100%; }
+  * { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; box-sizing: border-box; }
+  @keyframes navFade { from { opacity: 0; } to { opacity: 1; } }
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useRef, createElement: h } = React;
+
+/* ---------- seeded rng ---------- */
+function seededRand(seed) {
+  let s = seed;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+/* ---------- QR (visual stand-in) ---------- */
+function QRCode({ data, size = 160 }) {
+  const N = 29, cell = size / N;
+  const rand = seededRand(data.split("").reduce((a, c) => a + c.charCodeAt(0), 7));
+  const cells = [];
+  const inFinder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= N - 7) || (r >= N - 7 && c < 7);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    if (inFinder(r, c)) continue;
+    if (rand() > 0.52) cells.push([r, c]);
+  }
+  const finder = (x, y, key) => h("g", { key, transform: `translate(${x},${y})` },
+    h("rect", { width: cell * 7, height: cell * 7, fill: "#000" }),
+    h("rect", { x: cell, y: cell, width: cell * 5, height: cell * 5, fill: "#fff" }),
+    h("rect", { x: cell * 2, y: cell * 2, width: cell * 3, height: cell * 3, fill: "#000" })
+  );
+  return h("svg", { width: size, height: size, style: { display: "block" } },
+    h("rect", { width: size, height: size, fill: "#fff" }),
+    cells.map(([r, c], i) => h("rect", { key: i, x: c * cell, y: r * cell, width: cell, height: cell, fill: "#000" })),
+    finder(0, 0, "f1"), finder((N - 7) * cell, 0, "f2"), finder(0, (N - 7) * cell, "f3")
+  );
+}
+
+/* ---------- Mastercard ---------- */
+const MCLogo = ({ size = 44 }) => h("svg", { width: size, height: size * 0.62, viewBox: "0 0 44 28" },
+  h("circle", { cx: 15, cy: 14, r: 13, fill: "#eb001b" }),
+  h("circle", { cx: 29, cy: 14, r: 13, fill: "#f79e1b" }),
+  h("path", { d: "M22 3.5 A13 13 0 0 1 22 24.5 A13 13 0 0 1 22 3.5 Z", fill: "#f75e1b", opacity: 0.9 })
+);
+
+/* ---------- contactless waves ---------- */
+const Waves = () => h("svg", { width: 18, height: 18, viewBox: "0 0 18 18", style: { marginLeft: 6 } },
+  [4, 8, 12].map((r, i) => h("path", {
+    key: i,
+    d: `M ${3 + i * 1.5} ${9 - r / 1.6} A ${r} ${r} 0 0 1 ${3 + i * 1.5} ${9 + r / 1.6}`,
+    stroke: "#fff", strokeWidth: 1.6, fill: "none", strokeLinecap: "round"
+  }))
+);
+
+/* ---------- card faces ---------- */
+function VenmoCard() {
+  return h("div", { style: { position: "absolute", inset: 0, background: "#009cde" } },
+    h("div", { style: { position: "absolute", top: 20, left: 24, color: "#fff", fontSize: 34, fontWeight: 800, fontStyle: "italic", letterSpacing: -1 } }, "venmo"),
+    h("div", { style: { position: "absolute", top: 28, right: 24, display: "flex", alignItems: "center" } },
+      h("span", { style: { color: "#fff", fontSize: 19, fontWeight: 700 } }, "debit"), h(Waves)),
+    h("div", { style: { position: "absolute", bottom: 16, right: 20 } }, h(MCLogo, { size: 62 }))
+  );
+}
+
+function CashAppCard() {
+  return h("div", { style: { position: "absolute", inset: 0, background: "#0b0b0b" } },
+    h("div", { style: { position: "absolute", top: 18, left: 24, color: "#fff", fontSize: 40, fontWeight: 700 } }, "$"),
+    h("div", { style: { position: "absolute", top: 26, right: 24, color: "#fff", fontSize: 22, fontWeight: 700 } }, "Cash App"),
+    h("div", { style: { position: "absolute", bottom: 18, right: 24, color: "#fff", fontSize: 17, fontWeight: 600, letterSpacing: 1.5 } }, "DEBIT")
+  );
+}
+
+function AppleCashCard() {
+  const dots = [];
+  const rand = seededRand(11);
+  const cx = 200, cy = 260, rings = 13;
+  for (let ring = 0; ring < rings; ring++) {
+    const radius = 24 + ring * 17;
+    const count = Math.floor(radius / 5.2);
+    for (let k = 0; k <= count; k++) {
+      const angle = Math.PI + (Math.PI * k) / count;
+      const x = cx + radius * Math.cos(angle);
+      const y = cy + radius * Math.sin(angle) * 0.88;
+      if (y < 40) continue;
+      dots.push({ x, y, r: 3 + ring * 0.55, hue: 255 + rand() * 30 });
+    }
+  }
+  return h("div", { style: { position: "absolute", inset: 0, background: "linear-gradient(180deg,#1c1c1e,#0e0e10)" } },
+    h("div", { style: { position: "absolute", top: 22, left: 24, color: "#fff", fontSize: 26, fontWeight: 600 } }, "\uF8FFCash"),
+    h("div", { style: { position: "absolute", top: 22, right: 24, color: "#fff", fontSize: 26, fontWeight: 700 } }, "$0"),
+    h("svg", { viewBox: "0 0 400 260", preserveAspectRatio: "xMidYMax meet", style: { position: "absolute", bottom: 0, left: 0, width: "100%", height: "78%" } },
+      dots.map((d, i) => h("g", { key: i, transform: `translate(${d.x},${d.y})` },
+        h("circle", { r: d.r, fill: `hsl(${d.hue},65%,${58 + (d.r - 3) * 2}%)` }),
+        h("path", {
+          d: `M ${-d.r * 0.3} ${d.r * 0.3} L ${d.r * 0.3} ${-d.r * 0.3} M ${d.r * 0.3} ${-d.r * 0.3} l ${-d.r * 0.38} 0 M ${d.r * 0.3} ${-d.r * 0.3} l 0 ${d.r * 0.38}`,
+          stroke: "#1a1a2e", strokeWidth: d.r * 0.22, fill: "none", strokeLinecap: "round"
+        })
+      ))
+    )
+  );
+}
+
+function BofACard() {
+  return h("div", { style: { position: "absolute", inset: 0, background: "linear-gradient(155deg,#e31837 0%,#c8102e 40%,#a50d26 100%)" } },
+    h("svg", { style: { position: "absolute", inset: 0, width: "100%", height: "100%" }, preserveAspectRatio: "none", viewBox: "0 0 400 250" },
+      h("path", { d: "M-50 200 L200 60 L460 210", stroke: "#ffffff14", strokeWidth: 60, fill: "none" }),
+      h("path", { d: "M-50 260 L180 130 L460 280", stroke: "#00000018", strokeWidth: 50, fill: "none" }),
+      h("path", { d: "M-50 120 L240 -20", stroke: "#ffffff10", strokeWidth: 44, fill: "none" })
+    ),
+    h("div", { style: { position: "absolute", top: 22, left: 24, right: 24, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+        h("span", { style: { color: "#fff", fontSize: 17, fontWeight: 700, letterSpacing: 2.2 } }, "BANK OF AMERICA"),
+        h("svg", { width: 32, height: 20, viewBox: "0 0 34 22" },
+          h("g", { stroke: "#fff", strokeWidth: 2.6, fill: "none" },
+            h("path", { d: "M2 20 L16 4 M7 21 L21 5 M12 22 L26 6" }),
+            h("path", { d: "M16 4 L30 2 M21 5 L33 4 M26 6 L34 6", strokeWidth: 2.2 })
+          ))),
+      h("span", { style: { color: "#fff", fontSize: 15, fontWeight: 700, letterSpacing: 1 } }, "DEBIT CARD")
+    ),
+    h("div", { style: { position: "absolute", bottom: 62, right: 24, color: "#fff", fontSize: 21, fontWeight: 700 } }, "debit"),
+    h("div", { style: { position: "absolute", bottom: 14, right: 20 } }, h(MCLogo, { size: 58 })),
+    h("div", { style: { position: "absolute", bottom: 46, left: 24, color: "#fff", fontSize: 20 } }, "\u267B"),
+    h("div", { style: { position: "absolute", bottom: 16, left: 24, color: "#fff", fontSize: 17, letterSpacing: 2 } }, "\u2022\u2022\u2022\u2022 4986")
+  );
+}
+
+/* ---------- FSU hero strip ---------- */
+function HeroStrip() {
+  const crowd = [];
+  for (let i = 0; i < 240; i++) {
+    const rand = seededRand(i + 3);
+    const x = 90 + rand() * 310, y = rand() * 88;
+    const colors = ["#8c2f2f", "#b0563f", "#d9c9a3", "#5c1414", "#c98f6a", "#efe3c8", "#7a2222"];
+    crowd.push(h("circle", { key: i, cx: x, cy: y, r: 2 + rand() * 3, fill: colors[Math.floor(rand() * colors.length)] }));
+  }
+  const spots = [];
+  for (let i = 0; i < 16; i++) {
+    const rand = seededRand(i + 40);
+    spots.push(h("circle", { key: i, cx: 40 + rand() * 45, cy: 50 + rand() * 30, r: 1.4 + rand() * 1.6, fill: "#7a5c40" }));
+  }
+  return h("div", { style: { position: "relative", width: "100%", height: 88, overflow: "hidden" } },
+    h("svg", { width: "100%", height: 88, preserveAspectRatio: "none", viewBox: "0 0 400 88", style: { position: "absolute", inset: 0 } },
+      h("rect", { width: 400, height: 88, fill: "#6e1a1a" }),
+      h("g", { opacity: 0.85 }, crowd),
+      h("rect", { x: 150, y: 8, width: 6, height: 80, fill: "#c9c2b2", opacity: 0.7, transform: "skewX(-8)" }),
+      h("path", { d: "M0 0 H150 L110 88 H0 Z", fill: "#5c1010" }),
+      h("g", { stroke: "#7a1f1f", strokeWidth: 0.8, fill: "none", opacity: 0.9 },
+        h("path", { d: "M0 18 L60 0 M0 55 L110 0 M0 88 L150 0 M30 88 L150 18 M70 88 L140 36" }),
+        h("path", { d: "M20 36 L80 64 M10 74 L60 46" })
+      )
+    ),
+    h("svg", { viewBox: "0 0 120 100", style: { position: "absolute", left: "44%", bottom: -4, height: 84, transform: "translateX(-50%)" } },
+      h("g", null,
+        h("path", { d: "M30 78 Q28 58 44 52 Q52 40 70 44 Q88 46 94 34 L100 20 Q104 30 98 44 Q92 58 78 60 Q84 70 80 84 L74 96 L68 96 L70 82 Q60 86 50 82 L46 96 L40 96 L42 80 Q32 82 30 78 Z", fill: "#f2ede2" }),
+        spots,
+        h("path", { d: "M94 34 L106 16 Q110 12 108 20 L102 34 Q98 40 94 38 Z", fill: "#f2ede2" })
+      ),
+      h("g", null,
+        h("path", { d: "M56 44 Q54 26 62 22 Q70 18 74 26 Q78 34 72 44 Q66 50 56 44 Z", fill: "#a11d1d" }),
+        h("circle", { cx: 66, cy: 18, r: 5.5, fill: "#8a5a3a" }),
+        h("g", { fill: "#f5e9c8", stroke: "#c9a227", strokeWidth: 0.5 },
+          h("path", { d: "M63 13 Q58 4 60 0 L63 6 Z" }),
+          h("path", { d: "M66 12 Q66 2 68 -2 L69 6 Z" }),
+          h("path", { d: "M69 13 Q74 4 72 0 L69 6 Z" })
+        ),
+        h("line", { x1: 42, y1: 10, x2: 80, y2: 34, stroke: "#6b4a2a", strokeWidth: 2 }),
+        h("path", { d: "M42 10 L36 2 L46 8 Z", fill: "#d8d2c2" }),
+        h("path", { d: "M56 44 Q50 56 52 66 L58 64 Q56 54 60 46 Z", fill: "#d9a520" })
+      )
+    ),
+    h("div", { style: { position: "absolute", left: 18, top: 28, color: "#e8d9a0", fontSize: 20, fontWeight: 600, letterSpacing: 9, fontFamily: "'Arial Narrow',Arial,sans-serif" } }, "STUDENT")
+  );
+}
+
+/* ---------- ticket face ---------- */
+function TicketFace({ full, notch }) {
+  return h("div", { style: { position: "absolute", inset: 0, background: "#b3a06b", display: "flex", flexDirection: "column", overflow: "hidden" } },
+    notch && h("div", { style: { position: "absolute", top: -2, left: "50%", transform: "translateX(-50%)", width: 96, height: 24, background: "#000", borderRadius: "0 0 48px 48px", zIndex: 3 } }),
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 18px 10px" } },
+      h("div", { style: { background: "#e8e6e0", padding: "5px 11px" } },
+        h("span", { style: { color: "#7a1f2b", fontWeight: 800, fontSize: 20, letterSpacing: 1, fontFamily: "'Arial Narrow','Impact',sans-serif", WebkitTextStroke: "0.5px #4a0f18" } },
+          "FLORIDA STATE", h("span", { style: { fontSize: 8, verticalAlign: "super" } }, "\u00AE"))),
+      h("div", { style: { textAlign: "right", paddingTop: 3 } },
+        h("div", { style: { fontSize: 11.5, fontWeight: 700, color: "#1a1a1a", letterSpacing: 0.5 } }, "EVENT DATE"),
+        h("div", { style: { fontSize: 16, color: "#1a1a1a", marginTop: 1 } }, "10/21/23, 7:30 PM"))
+    ),
+    h(HeroStrip),
+    h("div", { style: { padding: "14px 18px 0" } },
+      h("div", { style: { fontSize: 12, fontWeight: 700, color: "#1a1a1a", letterSpacing: 0.8 } }, "DOAK CAMPBELL STADIUM"),
+      h("div", { style: { fontSize: 28, color: "#111", marginTop: 2 } }, "Duke")
+    ),
+    full && h(React.Fragment, null,
+      h("div", { style: { padding: "26px 18px 0" } }, h("div", { style: { fontSize: 24, color: "#111" } }, "General Admission")),
+      h("div", { style: { padding: "28px 18px 0" } }, h("div", { style: { fontSize: 17.5, color: "#111" } }, "Sit in Sec. 40,41,1-7 or Sec. 8 (above Row 63)")),
+      h("div", { style: { display: "flex", justifyContent: "center", padding: "28px 0 24px", marginTop: "auto" } },
+        h("div", { style: { background: "#fff", borderRadius: 8, padding: "12px 12px 5px" } },
+          h(QRCode, { data: "99489894759263", size: 160 }),
+          h("div", { style: { textAlign: "center", fontSize: 15, color: "#111", paddingTop: 3, letterSpacing: 0.5 } }, "99489894759263")
+        ))
+    )
+  );
+}
+
+/* ---------- wallet ---------- */
+const ITEMS = [
+  { id: "venmo", kind: "card", Face: VenmoCard },
+  { id: "cashapp", kind: "card", Face: CashAppCard },
+  { id: "applecash", kind: "card", Face: AppleCashCard },
+  { id: "bofa", kind: "card", Face: BofACard },
+  { id: "fsu", kind: "ticket" },
+];
+
+const CARD_RATIO = 0.628;
+const PEEK = 118;
+const SPRING = "cubic-bezier(0.32, 0.72, 0, 1)";
+const SPRING_BOUNCE = "cubic-bezier(0.34, 1.3, 0.5, 1)";
+
+function AppleWallet() {
+  const [selected, setSelected] = useState(null);
+  const [phase, setPhase] = useState("stack");
+  const [vw, setVw] = useState(390);
+  const [standalone, setStandalone] = useState(true);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const measure = () => {
+      if (containerRef.current) setVw(containerRef.current.offsetWidth);
+      const isStandalone = window.navigator.standalone === true ||
+        window.matchMedia("(display-mode: standalone)").matches;
+      setStandalone(isStandalone);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const cardW = Math.min(vw - 32, 400);
+  const cardH = Math.round(cardW * CARD_RATIO);
+  const ticketStackH = cardH + 40;
+
+  const open = (id) => {
+    if (phase !== "stack") return;
+    setSelected(id);
+    setPhase("opening");
+    requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open")));
+  };
+  const close = () => {
+    setPhase("closing");
+    setTimeout(() => { setSelected(null); setPhase("stack"); }, 480);
+  };
+
+  const selIndex = ITEMS.findIndex((it) => it.id === selected);
+  const stackY = (i) => i * PEEK;
+  const stackHeight = stackY(ITEMS.length - 1) + ticketStackH + 20;
+  const isOpenState = phase === "opening" || phase === "open" || phase === "closing";
+  const showFull = phase === "open";
+
+  return h("div", {
+    style: {
+      minHeight: "100vh", background: "#000", display: "flex", justifyContent: "center",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif",
+      overflow: "hidden", touchAction: "manipulation",
+    }
+  },
+    h("div", { ref: containerRef, style: { width: "100%", maxWidth: 430, position: "relative", padding: "0 16px" } },
+
+      /* header */
+      h("div", {
+        style: {
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "max(54px, env(safe-area-inset-top, 54px)) 4px 18px",
+          opacity: isOpenState ? 0 : 1,
+          transform: isOpenState ? "translateY(-16px)" : "translateY(0)",
+          transition: `opacity 0.3s ease, transform 0.4s ${SPRING}`,
+          pointerEvents: isOpenState ? "none" : "auto",
+        }
+      },
+        h("div", { style: { color: "#fff", fontSize: 32, fontWeight: 700, letterSpacing: -0.5 } }, "Wallet"),
+        h("div", {
+          style: {
+            width: 32, height: 32, borderRadius: 16, background: "rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 20, fontWeight: 300, cursor: "pointer",
+          }
+        }, "+")
+      ),
+
+      /* Done nav */
+      isOpenState && h("div", {
+        style: {
+          position: "absolute", top: "max(50px, env(safe-area-inset-top, 50px))",
+          left: 20, right: 20, zIndex: 60,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          opacity: phase === "open" ? 1 : 0,
+          transition: "opacity 0.2s ease",
+        }
+      },
+        h("button", {
+          onClick: close,
+          style: { background: "none", border: "none", color: "#0a84ff", fontSize: 17, cursor: "pointer", padding: "6px 2px" }
+        }, "Done"),
+        h("button", {
+          style: {
+            background: "rgba(255,255,255,0.16)", border: "none", color: "#fff",
+            width: 30, height: 30, borderRadius: 15, fontSize: 16, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }
+        }, "\u22EF")
+      ),
+
+      /* stack */
+      h("div", { style: { position: "relative", height: stackHeight } },
+        ITEMS.map((item, i) => {
+          const isSel = item.id === selected;
+          const isTicket = item.kind === "ticket";
+          let y = stackY(i), scale = 1, opacity = 1;
+          let ht = isTicket ? ticketStackH : cardH;
+
+          if (isOpenState && phase !== "closing") {
+            if (isSel) {
+              y = 46;
+              ht = isTicket ? Math.min(640, window.innerHeight - 140) : cardH + 10;
+            } else {
+              const dir = i < selIndex ? -1 : 1;
+              y = stackY(i) + dir * (window.innerHeight * 0.85);
+              scale = 0.95; opacity = 0;
+            }
+          }
+          if (phase === "closing") {
+            y = stackY(i); scale = 1; opacity = 1;
+            ht = isTicket ? ticketStackH : cardH;
+          }
+
+          const dist = Math.abs(i - (selIndex === -1 ? 0 : selIndex));
+          const delay = (phase === "opening" || phase === "open")
+            ? (isSel ? 0 : dist * 0.03)
+            : phase === "closing" ? (isSel ? 0 : 0.04 + dist * 0.03) : 0;
+
+          return h("div", {
+            key: item.id,
+            onClick: () => open(item.id),
+            style: {
+              position: "absolute", left: 0, right: 0, top: 0, height: ht,
+              transform: `translateY(${y}px) scale(${scale})`,
+              opacity,
+              zIndex: isSel && isOpenState ? 50 : i + 1,
+              borderRadius: isTicket ? 12 : 16,
+              overflow: "hidden",
+              cursor: phase === "stack" ? "pointer" : "default",
+              boxShadow: isSel && isOpenState ? "0 18px 60px rgba(0,0,0,0.8)" : "0 -6px 24px rgba(0,0,0,0.55)",
+              transition: [
+                `transform 0.55s ${isSel ? SPRING_BOUNCE : SPRING} ${delay}s`,
+                `height 0.55s ${SPRING} ${delay}s`,
+                `opacity 0.4s ease ${delay}s`,
+                "box-shadow 0.4s ease",
+              ].join(", "),
+              willChange: "transform, height, opacity",
+            }
+          },
+            isTicket
+              ? h(TicketFace, { full: isSel && showFull, notch: isSel && isOpenState })
+              : h(item.Face)
+          );
+        })
+      ),
+
+      /* Pass Details */
+      phase === "open" && ITEMS[selIndex] && ITEMS[selIndex].kind === "ticket" && h("div", {
+        style: {
+          position: "absolute", left: 0, right: 0,
+          top: 46 + Math.min(640, window.innerHeight - 140) + 14,
+          textAlign: "center", color: "#0a84ff", fontSize: 15,
+          animation: "navFade 0.3s ease", zIndex: 55, cursor: "pointer",
+        }
+      }, "Pass Details"),
+
+      /* add-to-homescreen hint */
+      !standalone && phase === "stack" && h("div", {
+        style: {
+          position: "fixed", bottom: 0, left: 0, right: 0,
+          background: "rgba(28,28,30,0.92)",
+          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+          padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 8px))",
+          color: "#fff", fontSize: 13, lineHeight: 1.45,
+          textAlign: "center", zIndex: 100,
+        }
+      },
+        h("b", null, "Go fullscreen: "),
+        "tap Share in Safari, then ", h("b", null, "Add to Home Screen"),
+        ". Open from that icon and the address bar disappears."
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(AppleWallet));
+</script>
+</body>
+</html>
